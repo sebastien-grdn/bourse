@@ -1,0 +1,11 @@
+import {readFileSync, writeFileSync} from 'node:fs';
+import {join} from 'node:path';
+import {candles, evaluate, latestSession} from '../lib/market.mjs';
+const directory = process.argv[2];
+const read = name => JSON.parse(readFileSync(join(directory,name+'.json'),'utf8')).chart.result[0];
+const companies = JSON.parse(readFileSync('lib/cac40.json','utf8'));
+const sessions = [...candles(read('^FCHI')).keys()].sort();
+const date = latestSession();
+const rows = companies.map(company=>({...company,...evaluate(read(company.ticker),sessions,date)}));
+writeFileSync('lib/initial.json', JSON.stringify({date,rows}));
+console.log(date, rows.length, rows.filter(r=>r.mm50.crossed || r.mm100.crossed).map(r=>[r.ticker,r.mm50.crossed,r.mm100.crossed,r.close,r.mm50.current,r.mm100.current]));
