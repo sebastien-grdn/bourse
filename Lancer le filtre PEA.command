@@ -1,28 +1,27 @@
 #!/bin/zsh
 set -eu
 cd -- "${0:A:h}"
-export PATH="/opt/homebrew/opt/node@22/bin:/usr/local/opt/node@22/bin:$PATH"
 url="http://127.0.0.1:8792/"
+if [[ ! -x .venv/bin/python ]]; then
+  python3 -m venv .venv
+fi
+if ! .venv/bin/python -c 'import flask, certifi; from zoneinfo import ZoneInfo; ZoneInfo("Europe/Paris")' 2>/dev/null; then
+  .venv/bin/python -m pip install -r requirements.txt
+fi
 if curl -fsS --max-time 2 "$url" 2>/dev/null | grep -Fq 'Filtre PEA · Signaux de clôture'; then
   open "$url"
   exit 0
 fi
-if ! command -v node >/dev/null || [[ ! -f dist/server/wrangler.json ]]; then
-  print "Le lancement nécessite Node.js 22 et la version construite dans ce dossier."
-  read -k 1
-  exit 1
-fi
-npm run start -- --port 8792 &
-server_pid=$!
-trap 'kill "$server_pid" 2>/dev/null || true' EXIT
-for attempt in {1..40}; do
+.venv/bin/python app.py &
+pid=$!
+trap 'kill "$pid" 2>/dev/null || true' EXIT
+for attempt in {1..30}; do
   if curl -fsS --max-time 2 "$url" 2>/dev/null | grep -Fq 'Filtre PEA · Signaux de clôture'; then
     open "$url"
-    print "Le filtre est ouvert. Garde cette fenêtre ouverte pendant son utilisation."
-    wait "$server_pid"
+    wait "$pid"
     exit 0
   fi
-  kill -0 "$server_pid" 2>/dev/null || exit 1
+  kill -0 "$pid" 2>/dev/null || exit 1
   sleep 1
 done
 print "Le serveur local ne répond pas sur le port 8792."

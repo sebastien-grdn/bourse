@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Filtre PEA · Signaux de clôture</title><link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}"></head>
+<body><main>
+<header><div class="brand"><b aria-hidden="true">∿</b> Filtre PEA</div><span>Analyse technique</span></header>
+<section class="intro"><div><span class="label">{{ 'Liste personnelle' if report.custom else 'Univers CAC 40' }}</span>
+<h1>Signaux de clôture</h1><p>Franchissements haussiers des moyennes mobiles à 50 et 100 séances.</p></div>
+<form action="{{ url_for('refresh', seances=window, mode=mode, filtre=selected) }}" method="post"><button class="primary">Actualiser les cours</button></form></section>
+<div class="asof"><strong>Séance du {{ report.date|jour }}</strong><span>{{ 'Dernière séance clôturée' if fresh else 'Relevé antérieur · actualisation nécessaire' }}</span></div>
+<form class="lookback" method="get" action="{{ url_for('home') }}">
+<input type="hidden" name="filtre" value="{{ selected }}">
+<label>Franchissement <select name="mode"><option value="recent"{% if mode == 'recent' %} selected{% endif %}>Dans les X dernières séances</option><option value="exact"{% if mode == 'exact' %} selected{% endif %}>Exactement à la Xᵉ séance en remontant</option></select></label>
+<label>Nombre de séances (X) <input name="seances" type="number" min="1" max="{{ limit }}" required value="{{ window }}"></label>
+<button>Appliquer</button><small>La dernière clôture compte pour 1. Le titre doit être resté au-dessus de la moyenne depuis le franchissement.</small></form>
+<section class="stats"><article><span>Valeurs analysées</span><strong>{{ valid|length }}<em> / {{ report.rows|length }}</em></strong></article>
+{% for key in ['mm50','mm100'] %}<article><span>Franchissements {{ key|upper }}</span><strong>{{ hits[key]|length }}</strong></article>{% endfor %}</section>
+<section class="results"><div class="tools"><h2>Résultats</h2>
+<a class="action" href="{{ url_for('home', filtre=selected, seances=window, mode=mode) if editing else url_for('home', filtre=selected, liste=1, seances=window, mode=mode) }}">{{ 'Fermer' if editing else 'Modifier la liste' }}</a></div>
+{% if editing %}<form action="{{ url_for('refresh', seances=window, mode=mode, filtre=selected) }}" method="post" class="editor"><label for="tickers">Tickers à analyser</label>
+<p>Sépare les symboles par des virgules ou des retours à la ligne. Places disponibles : Paris (.PA), Amsterdam (.AS), Bruxelles (.BR) et Lisbonne (.LS).</p>
+<textarea id="tickers" name="tickers" rows="4">{{ draft }}</textarea>
+<button class="primary" name="action" value="liste">Analyser cette liste</button> <button name="action" value="cac">Reprendre le CAC 40</button></form>{% endif %}
+{% if message %}<p role="status">{{ message }}</p>{% endif %}
+<nav class="filters" aria-label="Filtrer les résultats">{% for key,label in filters.items() %}
+<a class="action" href="{{ url_for('home', filtre=key, seances=window, mode=mode) }}" {% if key == selected %}aria-current="page"{% endif %}>{{ label }}{% if key == 'signaux' %} · {{ signals|length }}{% endif %}</a>{% endfor %}</nav>
+{% if valid|length < report.rows|length %}<p class="warn">Cours indisponibles pour {{ report.rows|length - valid|length }} valeur(s). Le détail figure dans « Toutes les valeurs ».</p>{% endif %}
+{% if incomplete %}<p class="warn">{{ incomplete }} valeur(s) avec un historique insuffisant pour dater le franchissement sur toute la fenêtre demandée.</p>{% endif %}
+<div class="scroll"><table><thead><tr><th>Entreprise</th><th>Clôture</th><th>MM50</th><th>MM100</th><th>Signal</th></tr></thead><tbody>
+{% for row in visible %}<tr><td>{% if row.error %}{{ row.name }}{% else %}<a class="name" href="{{ url_for('home', filtre=selected, titre=row.ticker, seances=window, mode=mode) }}#detail">{{ row.name }}</a>{% endif %}<small>{{ row.ticker }}</small></td>
+{% if row.error %}<td colspan="4">{{ row.error }}</td>{% else %}<td>{{ row.close|prix }} <small class="currency">{{ row.currency }}</small></td><td>{{ row.mm50.current|prix }}</td><td>{{ row.mm100.current|prix }}</td>
+<td>{% for k in ['mm50','mm100'] if matches(row, k) %}<b class="tag">{{ k|upper }} · {{ row[k].event.date|jour }} · séance {{ row[k].event.age }}</b>{% else %}—{% endfor %}</td>{% endif %}</tr>{% endfor %}
+</tbody></table></div>{% if not visible %}<p class="empty">Aucun franchissement pour ce filtre sur les valeurs analysées.</p>{% endif %}</section>
+{% if focus %}<section class="detail" id="detail"><div><span class="label">Détail sur 30 jours</span><h3>{{ focus.name }}</h3><small>{{ focus.ticker }} · {{ focus.currency }}</small></div>
+<div><svg viewBox="0 0 336 100" role="img" aria-label="Clôtures et moyennes mobiles de {{ focus.name }} sur 30 jours">{% for color,path in paths %}<path d="{{ path }}" fill="none" stroke="{{ color }}" stroke-width="{{ 2.7 if loop.first else 1.8 }}"/>{% endfor %}</svg>
+<div class="legend"><span>Clôture</span><span>MM50</span><span>MM100</span></div></div>
+<table class="pair"><caption>Deux dernières clôtures</caption><thead><tr><th>Séance</th><th>Clôture</th><th>MM50</th><th>MM100</th></tr></thead>
+<tbody>{% for day,price,m50,m100 in [(focus.prevDate,focus.prevClose,focus.mm50.previous,focus.mm100.previous),(focus.date,focus.close,focus.mm50.current,focus.mm100.current)] %}
+<tr><td>{{ day|jour }}</td><td>{{ price|prix }}</td><td>{{ m50|prix }}</td><td>{{ m100|prix }}</td></tr>{% endfor %}</tbody></table></section>{% endif %}
+{% if focus %}{% for k in ['mm50','mm100'] if matches(focus,k) %}{% set event = focus[k].event %}
+<p class="evidence"><strong>{{ k|upper }} · {{ focus.name }}</strong> — Le {{ event.previous_date|jour }}, clôture à {{ event.previous_close|prix }} pour une moyenne à {{ event.previous_average|prix }}. Le {{ event.date|jour }}, clôture à {{ event.close|prix }} pour une moyenne à {{ event.average|prix }}.</p>
+{% endfor %}{% endif %}
+<footer><details><summary>Méthode et sources</summary><p>Le filtre exige 101 clôtures consécutives. Un franchissement exige une clôture précédente sous sa moyenne ou à égalité, puis une clôture strictement supérieure à la nouvelle moyenne. Les calculs utilisent les cours avant arrondi, hors réinvestissement des dividendes.</p>
+<p>La séance du jour est retenue à partir de 18 h à Paris (14 h 25 les demi-séances de fin d’année). La liste de test reprend le CAC 40 de novembre 2026. Pour ton PEA, utilise les tickers éligibles fournis par ton courtier.</p>
+<a href="https://live.euronext.com/fr/product/indices/FR0003500008-XPAR">Composition Euronext</a> · <a href="https://fr.finance.yahoo.com/quote/%5EFCHI/history/">Clôtures Yahoo Finance</a></details></footer>
+</main></body></html>
